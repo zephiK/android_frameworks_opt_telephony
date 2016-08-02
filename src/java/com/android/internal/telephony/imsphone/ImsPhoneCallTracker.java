@@ -184,6 +184,7 @@ public final class ImsPhoneCallTracker extends CallTracker {
 
     private boolean mDesiredMute = false;    // false = mute off
     private boolean mOnHoldToneStarted = false;
+    private int mOnHoldToneId = -1;
 
     PhoneConstants.State mState = PhoneConstants.State.IDLE;
 
@@ -960,7 +961,11 @@ public final class ImsPhoneCallTracker extends CallTracker {
                 }
             }
 
-            mIsInEmergencyCall = isEmergencyCallInList;
+            if (!isEmergencyCallInList) {
+                mIsInEmergencyCall = false;
+                mPhone.mDefaultPhone.sendEmergencyCallStateChange(false);
+            }
+
         }
     }
 
@@ -968,6 +973,7 @@ public final class ImsPhoneCallTracker extends CallTracker {
         mConnections.add(conn);
         if (conn.isEmergency()) {
             mIsInEmergencyCall = true;
+            mPhone.mDefaultPhone.sendEmergencyCallStateChange(true);
         }
     }
 
@@ -1158,6 +1164,13 @@ public final class ImsPhoneCallTracker extends CallTracker {
             ImsPhoneConnection conn = findConnection(imsCall);
             if (DBG) log("cause = " + cause + " conn = " + conn);
 
+            if (mOnHoldToneId == System.identityHashCode(conn)) {
+                if (conn != null && mOnHoldToneStarted) {
+                    mPhone.stopOnHoldTone(conn);
+                }
+                mOnHoldToneStarted = false;
+                mOnHoldToneId = -1;
+            }
             if (conn != null && conn.isIncoming() && conn.getConnectTime() == 0) {
                 // Missed
                 if (cause == DisconnectCause.NORMAL) {
@@ -1292,9 +1305,9 @@ public final class ImsPhoneCallTracker extends CallTracker {
         @Override
         public void onCallResumeReceived(ImsCall imsCall) {
             if (DBG) log("onCallResumeReceived");
-
-            if (mOnHoldToneStarted) {
-                mPhone.stopOnHoldTone();
+            ImsPhoneConnection conn = findConnection(imsCall);
+            if (conn != null && mOnHoldToneStarted) {
+                mPhone.stopOnHoldTone(conn);
                 mOnHoldToneStarted = false;
             }
 
@@ -1313,8 +1326,9 @@ public final class ImsPhoneCallTracker extends CallTracker {
             ImsPhoneConnection conn = findConnection(imsCall);
             if (conn != null && conn.getState() == ImsPhoneCall.State.ACTIVE) {
                 if (!mOnHoldToneStarted && ImsPhoneCall.isLocalTone(imsCall)) {
-                    mPhone.startOnHoldTone();
+                    mPhone.startOnHoldTone(conn);
                     mOnHoldToneStarted = true;
+                    mOnHoldToneId = System.identityHashCode(conn);
                 }
             }
 
